@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dice Lab — 3D Dice Rolling Game</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.3);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(99, 102, 241, 0.6);
+    }
+
+    /* 3D Dice Container & Perspective Engine */
+    :root {
+      --die-size: 76px;
+      --half-die-size: 38px;
+    }
+
+    @media (max-width: 640px) {
+      :root {
+        --die-size: 60px;
+        --half-die-size: 30px;
+      }
+    }
+
+    .perspective-stage {
+      perspective: 1000px;
+      perspective-origin: 50% 50%;
+    }
+
+    .die-wrapper {
+      position: relative;
+      width: var(--die-size);
+      height: var(--die-size);
+      perspective: 1000px;
+      margin: 12px;
+    }
+
+    .die-cube {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      transform-style: preserve-3d;
+      will-change: transform;
+    }
+
+    /* Dynamic Shadow beneath the 3D Cube */
+    .die-shadow {
+      position: absolute;
+      width: var(--die-size);
+      height: var(--die-size);
+      background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0) 70%);
+      border-radius: 50%;
+      transform: rotateX(90deg) translateZ(-65px) scale(1);
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .die-wrapper.rolling .die-shadow {
+      animation: shadowPulse 0.35s infinite alternate ease-in-out;
+    }
+
+    @keyframes shadowPulse {
+      0% {
+        transform: rotateX(90deg) translateZ(-65px) scale(0.5);
+        opacity: 0.2;
+      }
+      100% {
+        transform: rotateX(90deg) translateZ(-65px) scale(1.3);
+        opacity: 0.7;
+      }
+    }
+
+    /* 3D Die Faces */
+    .die-face {
+      position: absolute;
+      width: var(--die-size);
+      height: var(--die-size);
+      background: linear-gradient(145deg, #ffffff 0%, #e2e8f0 100%);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      box-shadow: 
+        inset 0 0 12px rgba(0, 0, 0, 0.12),
+        inset 0 -3px 6px rgba(0, 0, 0, 0.15),
+        0 4px 12px rgba(0, 0, 0, 0.3);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      padding: 10px;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    /* 3D Face Transforms */
+    .face-1 { transform: rotateY(0deg) translateZ(var(--half-die-size)); }
+    .face-6 { transform: rotateY(180deg) translateZ(var(--half-die-size)); }
+    .face-2 { transform: rotateY(-90deg) translateZ(var(--half-die-size)); }
+    .face-5 { transform: rotateY(90deg) translateZ(var(--half-die-size)); }
+    .face-3 { transform: rotateX(90deg) translateZ(var(--half-die-size)); }
+    .face-4 { transform: rotateX(-90deg) translateZ(var(--half-die-size)); }
+
+    /* Pips Styling */
+    .pip {
+      width: 12px;
+      height: 12px;
+      background: radial-gradient(circle at 35% 35%, #334155, #0f172a);
+      border-radius: 50%;
+      align-self: center;
+      justify-self: center;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(255, 255, 255, 0.5);
+    }
+
+    @media (max-width: 640px) {
+      .pip {
+        width: 9px;
+        height: 9px;
+      }
+    }
+
+    /* Glassmorphism background effect */
+    .glass-card {
+      background: rgba(30, 41, 59, 0.65);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .glass-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Pulsing glow animation */
+    @keyframes subtlePulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.95); }
+    }
+
+    .pulse-dot {
+      animation: subtlePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 sm:p-6 md:p-8 antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Main Wrapper -->
+  <main class="w-full max-w-3xl flex flex-col gap-6 my-auto">
+
+    <!-- Top Navigation Header -->
+    <header class="flex justify-between items-center py-2 border-b border-slate-800/80">
+      <a href="#" class="flex items-center gap-2.5 font-extrabold text-xl tracking-tight text-white group">
+        <span class="flex items-center justify-center w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 group-hover:scale-105 transition-transform">
+          ⚄
+        </span>
+        <span>dice<span class="text-indigo-400">lab</span></span>
+      </a>
+      
+      <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-full">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981] pulse-dot"></span>
+        <span>READY TO ROLL</span>
+      </div>
+    </header>
+
+    <!-- Hero Header -->
+    <section class="space-y-1">
+      <p class="text-xs font-bold tracking-widest text-indigo-400 uppercase">3D Physics & Audio Simulator</p>
+      <h1 class="text-3xl sm:text-4xl font-black text-white tracking-tight">Roll the <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">dice.</span></h1>
+      <p class="text-sm sm:text-base text-slate-400 font-normal">Test your luck in full 3D space with dynamic synthesized motion audio.</p>
+    </section>
+
+    <!-- Game Card Canvas -->
+    <section class="glass-card rounded-3xl p-5 sm:p-7 shadow-2xl shadow-slate-950/80 space-y-6" aria-label="Dice Roller Arena">
+      
+      <!-- Controls Header -->
+      <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/60 pb-4">
+        <div>
+          <p class="text-[10px] font-bold tracking-widest uppercase text-slate-400">THE ARENA</p>
+          <h2 class="text-lg font-bold text-slate-100">Let fate decide</h2>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <!-- Sound Toggle Button -->
+          <button id="soundToggle" type="button" class="glass-pill hover:bg-slate-800/80 text-slate-200 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 border border-slate-700/50" aria-pressed="true" title="Toggle audio effects">
+            <span id="soundIcon" class="text-sm">🔊</span>
+            <span id="soundLabel" class="hidden sm:inline">SOUND ON</span>
+          </button>
+
+          <!-- Dice Count Selector -->
+          <div class="flex items-center gap-2 glass-pill px-3 py-1.5 rounded-xl border border-slate-700/50">
+            <label for="diceCount" class="text-xs font-bold text-slate-400 tracking-wider">DICE</label>
+            <select id="diceCount" class="bg-transparent text-sm font-bold text-white focus:outline-none cursor-pointer">
+              <option value="1" class="bg-slate-900 text-white">1 die</option>
+              <option value="2" selected class="bg-slate-900 text-white">2 dice</option>
+              <option value="3" class="bg-slate-900 text-white">3 dice</option>
+              <option value="4" class="bg-slate-900 text-white">4 dice</option>
+              <option value="5" class="bg-slate-900 text-white">5 dice</option>
+              <option value="6" class="bg-slate-900 text-white">6 dice</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3D Dice Display Stage -->
+      <div id="diceArea" class="perspective-stage bg-slate-950/60 border border-slate-800/80 rounded-2xl p-6 sm:p-10 flex flex-wrap justify-center items-center min-h-[220px] gap-2 sm:gap-6 relative overflow-hidden">
+        <!-- Dice cubes dynamically rendered here -->
+      </div>
+
+      <!-- Results & Metrics -->
+      <div class="flex items-center justify-between bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4 sm:p-5">
+        <div>
+          <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase">TOTAL SCORE</p>
+          <div id="total" class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">0</div>
+        </div>
+        <div id="resultNote" class="text-xs sm:text-sm font-medium text-slate-400 text-right max-w-[200px]">
+          Press "Roll the dice" to test your luck.
+        </div>
+      </div>
+
+      <!-- Roll Trigger Button -->
+      <button id="rollButton" class="w-full py-4 px-6 bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.99] text-white font-bold text-base sm:text-lg rounded-2xl shadow-xl shadow-indigo-600/25 border border-indigo-400/20 transition-all flex items-center justify-center gap-3 group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+        <span class="inline-block transform group-hover:rotate-180 transition-transform duration-500 text-xl">↻</span>
+        <span>Roll the dice</span>
+        <span class="transform group-hover:translate-x-1 transition-transform">→</span>
+      </button>
+
+      <p class="text-center text-xs text-slate-500 font-medium">Every roll uses randomized 3D physical trajectories & Web Audio sound synth.</p>
+    </section>
+
+    <!-- History Log Section -->
+    <section class="glass-card rounded-3xl p-5 sm:p-7 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800/60 pb-3">
+        <div>
+          <p class="text-[10px] font-bold tracking-widest uppercase text-slate-400">LOGS</p>
+          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <span>Roll history</span>
+            <span id="rollCount" class="text-xs font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full">0</span>
+          </h2>
+        </div>
+        <button id="clearHistory" class="text-xs font-semibold text-slate-400 hover:text-white transition-colors underline underline-offset-4 cursor-pointer">
+          Clear history
+        </button>
+      </div>
+
+      <!-- History List Items -->
+      <div id="historyList" class="max-h-[220px] overflow-y-auto space-y-2 pr-1">
+        <div class="flex flex-col items-center justify-center py-8 text-center text-slate-500 space-y-2">
+          <span class="text-3xl">🎲</span>
+          <p class="text-xs font-medium">Your recent rolls will be listed here.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 py-4 gap-2 border-t border-slate-900">
+      <span>MADE FOR A LITTLE FUN</span>
+      <span>Randomness & Physics Simulated ✦</span>
+    </footer>
+
+  </main>
+
+  <!-- Interactive JavaScript Application Code -->
+  <script>
+    // Audio Synthesizer using Web Audio API for dynamic rolling & impact sounds
+    class DiceSoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+      }
+
+      // Synthesizes a tumbling wooden/felt surface noise burst
+      playTumbleSound() {
+        if (this.muted) return;
+        this.init();
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+
+        const bufferSize = this.ctx.sampleRate * 0.04; // 40ms pulse
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        // Bandpass filter to model wooden impact resonances
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 250 + Math.random() * 450;
+        filter.Q.value = 2.5;
+
+        const gain = this.ctx.createGain();
+        const now = this.ctx.currentTime;
+        gain.gain.setValueAtTime(0.18 + Math.random() * 0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        noise.start(now);
+      }
+
+      // Synthesizes a solid low-frequency impact thud on table contact
+      playImpactSound() {
+        if (this.muted) return;
+        this.init();
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const now = this.ctx.currentTime;
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(35, now + 0.09);
+
+        gain.gain.setValueAtTime(0.45, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.09);
+      }
+    }
+
+    const audioEngine = new DiceSoundEngine();
+
+    // Exact 3D rotation angles to present target die face directly to the viewer
+    const faceRotations = {
+      1: { x: 0, y: 0 },
+      2: { x: 0, y: 90 },
+      3: { x: -90, y: 0 },
+      4: { x: 90, y: 0 },
+      5: { x: 0, y: -90 },
+      6: { x: 0, y: 180 }
+    };
+
+    // Pip positioning matrix (3x3 grid indices 0..8)
+    const pipMap = {
+      1: [4],
+      2: [0, 8],
+      3: [0, 4, 8],
+      4: [0, 2, 6, 8],
+      5: [0, 2, 4, 6, 8],
+      6: [0, 2, 3, 5, 6, 8]
+    };
+
+    // Flavor text generator based on roll total
+    function getFlavorText(sum, count) {
+      const avg = sum / count;
+      if (sum === count * 6) return "✦ PERFECT ROLL! Maximum fortune achieved! ✦";
+      if (sum === count) return "Snake eyes! Fortune loves a comeback.";
+      if (avg >= 5) return "An extraordinarily lucky roll!";
+      if (avg >= 3.5) return "Solid average roll. Fate is balanced.";
+      return "A modest total. The next roll could be huge!";
+    }
+
+    // DOM Elements
+    const diceArea = document.getElementById('diceArea');
+    const rollButton = document.getElementById('rollButton');
+    const diceCountSelect = document.getElementById('diceCount');
+    const totalDisplay = document.getElementById('total');
+    const resultNote = document.getElementById('resultNote');
+    const historyList = document.getElementById('historyList');
+    const rollCountDisplay = document.getElementById('rollCount');
+    const clearHistoryBtn = document.getElementById('clearHistory');
+    const soundToggle = document.getElementById('soundToggle');
+    const soundIcon = document.getElementById('soundIcon');
+    const soundLabel = document.getElementById('soundLabel');
+
+    let rollHistory = [];
+    let isRolling = false;
+
+    // Helper to generate a single face HTML with 3D pips
+    function createFaceHTML(faceNumber) {
+      const activePips = pipMap[faceNumber];
+      let pipsHTML = '';
+      for (let i = 0; i < 9; i++) {
+        if (activePips.includes(i)) {
+          pipsHTML += `<span class="pip"></span>`;
+        } else {
+          pipsHTML += `<span></span>`;
+        }
+      }
+      return `<div class="die-face face-${faceNumber}">${pipsHTML}</div>`;
+    }
+
+    // Render initial 3D Cubes
+    function setupDice(count) {
+      diceArea.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'die-wrapper';
+
+        const shadow = document.createElement('div');
+        shadow.className = 'die-shadow';
+
+        const cube = document.createElement('div');
+        cube.className = 'die-cube';
+        cube.dataset.index = i;
+
+        // Build all 6 faces for complete 3D geometry
+        let facesHTML = '';
+        for (let f = 1; f <= 6; f++) {
+          facesHTML += createFaceHTML(f);
+        }
+        cube.innerHTML = facesHTML;
+
+        wrapper.appendChild(shadow);
+        wrapper.appendChild(cube);
+        diceArea.appendChild(wrapper);
+      }
+      totalDisplay.textContent = '0';
+      resultNote.textContent = 'Press "Roll the dice" to test your luck.';
+    }
+
+    // Core Roll Animation and Sound Sequence
+    function rollDice() {
+      if (isRolling) return;
+      isRolling = true;
+      rollButton.disabled = true;
+
+      const wrappers = document.querySelectorAll('.die-wrapper');
+      const cubes = document.querySelectorAll('.die-cube');
+      const results = [];
+
+      const duration = 1200; // Total duration in milliseconds
+
+      // Periodic audio playback while rolling
+      const soundInterval = setInterval(() => {
+        audioEngine.playTumbleSound();
+      }, 85);
+
+      cubes.forEach((cube, idx) => {
+        const wrapper = wrappers[idx];
+        wrapper.classList.add('rolling');
+
+        const value = Math.floor(Math.random() * 6) + 1;
+        results.push(value);
+
+        // Calculate multi-axis full rotation angles + final face alignment
+        const extraSpinsX = (Math.floor(Math.random() * 4) + 4) * 360;
+        const extraSpinsY = (Math.floor(Math.random() * 4) + 4) * 360;
+
+        const targetRot = faceRotations[value];
+        const finalRotX = extraSpinsX + targetRot.x;
+        const finalRotY = extraSpinsY + targetRot.y;
+
+        // Physics-based cubic-bezier easing curve
+        cube.style.transition = `transform ${duration / 1000}s cubic-bezier(0.15, 0.85, 0.35, 1.2)`;
+        cube.style.transform = `rotateX(${finalRotX}deg) rotateY(${finalRotY}deg)`;
+      });
+
+      // Complete roll animation sequence
+      setTimeout(() => {
+        clearInterval(soundInterval);
+        audioEngine.playImpactSound();
+
+        wrappers.forEach(w => w.classList.remove('rolling'));
+
+        const sum = results.reduce((a, b) => a + b, 0);
+        totalDisplay.textContent = sum;
+        resultNote.textContent = getFlavorText(sum, results.length);
+
+        addHistoryRecord(results, sum);
+
+        isRolling = false;
+        rollButton.disabled = false;
+      }, duration);
+    }
+
+    // Record roll history
+    function addHistoryRecord(results, total) {
+      rollHistory.unshift({
+        results,
+        total,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      renderHistory();
+    }
+
+    // Render Roll History list
+    function renderHistory() {
+      rollCountDisplay.textContent = rollHistory.length;
+      if (rollHistory.length === 0) {
+        historyList.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-8 text-center text-slate-500 space-y-2">
+            <span class="text-3xl">🎲</span>
+            <p class="text-xs font-medium">Your recent rolls will be listed here.</p>
+          </div>
+        `;
+        return;
+      }
+
+      historyList.innerHTML = rollHistory.map(item => `
+        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs sm:text-sm transition-all hover:bg-slate-800/50">
+          <div class="flex items-center gap-3">
+            <span class="text-slate-500 font-mono text-[11px]">${item.time}</span>
+            <div class="flex items-center gap-1.5 font-bold text-slate-200">
+              ${item.results.map(r => `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-slate-800 border border-slate-700/60 text-indigo-400 text-xs">${r}</span>`).join('')}
+            </div>
+          </div>
+          <div class="font-extrabold text-white text-base">
+            Total: <span class="text-indigo-400">${item.total}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Toggle Audio State
+    soundToggle.addEventListener('click', () => {
+      audioEngine.muted = !audioEngine.muted;
+      soundToggle.setAttribute('aria-pressed', !audioEngine.muted);
+      soundIcon.textContent = audioEngine.muted ? '🔇' : '🔊';
+      soundLabel.textContent = audioEngine.muted ? 'SOUND OFF' : 'SOUND ON';
+    });
+
+    // Main Listeners
+    rollButton.addEventListener('click', rollDice);
+    diceCountSelect.addEventListener('change', (e) => setupDice(parseInt(e.target.value)));
+    clearHistoryBtn.addEventListener('click', () => {
+      rollHistory = [];
+      renderHistory();
+    });
+
+    // Initialize application on load
+    window.onload = () => {
+      setupDice(parseInt(diceCountSelect.value));
+    };
+  </script>
+</body>
+</html>
